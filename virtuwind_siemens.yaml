@@ -1,0 +1,286 @@
+heat_template_version: 2015-10-15
+
+description: Template to create service chain (SFC) for 2 VNFs
+parameters:
+
+  public_network:
+    type: string
+    label: Public network
+    description: ID of users network
+    default: external
+
+  public_subnet:
+    type: string
+    label: Public network
+    description: ID of users network
+    default: External-Guests
+
+  private_network_1:
+    type: string
+    label: SFC01
+    description: ID of industrial network
+    default: industrial-sfc01
+
+  private_subnet_1:
+    type: string
+    label: Private subnet
+    description: ID of industrial subnet
+    default: SFC_1010_NET
+
+  private_network_2:
+    type: string
+    label: SFC02
+    description: ID of industrial network
+    default: industrial-sfc02
+
+  private_subnet_2:
+    type: string
+    label: Private subnet
+    description: ID of industrial subnet
+    default: SFC_1011_NET
+
+  image_vDPI:
+    type: string
+    label: Image for the vDPI (virtual Deep Packet Inspection) VNF
+    description: Image to use for the vDPI VNF
+    default: DPIv01
+
+  image_vFW:
+    type: string
+    label: Image for the vSF (virtual service forwarder) VNF
+    description: Image to use for the vFW VNF
+    default: IPSv01
+
+  sshkey:
+    type: string
+    label: VMs ssh key
+    description: The ssh key for the VMs
+    default: mykey
+
+  flavor:
+    type: string
+    label: VMs flavor
+    description: Must be a valid OpenStack flavor
+    default: m1.small
+
+  odl_username:
+    type: string
+    label: ODL User Name
+    default: admin
+    description: User name for Open Daylight (ODL) Restconf access
+
+  odl_password:
+    type: string
+    label: ODL Password
+    default: admin
+    description: Password for ODL Restconf access
+
+  odl_ip_port:
+    type: string
+    label: Netfloc IP and port number
+    default: "10.237.222.40:8181"
+    description: IP and port of the ODL Controller node
+
+resources:
+# VNF configurations for DPI
+  boot_config_DPI:
+      type: OS::Heat::SoftwareConfig
+      properties:
+        group: script
+        config:
+          str_replace:
+            template: { get_file: basic_config_dpi.sh}
+            params:
+              $ipaddr: {get_attr: [vnf_vDPI_port_in, fixed_ips, 0, ip_address]}
+              $ipaddr2: {get_attr: [vnf_vDPI_port_out, fixed_ips, 0, ip_address]}
+
+  # VNF configurations for IPS
+  boot_config_FW:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config:
+        str_replace:
+          template: { get_file: basic_config_ips.sh}
+          params:
+            $ipaddr: {get_attr: [vnf_vFW_port_in, fixed_ips, 0, ip_address]}
+            $ipaddr2: {get_attr: [vnf_vFW_port_out, fixed_ips, 0, ip_address]}
+
+  vnf_vDPI_mgmt:
+    type: OS::Neutron::Port
+    properties:
+      network_id:
+        get_param: public_network
+      fixed_ips:
+        - subnet_id:
+            get_param: public_subnet
+
+  # for fixed IPs
+  vnf_vDPI_port_in:
+      type: OS::Neutron::Port
+      properties:
+        network_id:
+          get_param: private_network_1
+        fixed_ips: [{ "subnet": {get_param: private_subnet_1}, "ip_address": 10.0.10.20}]
+
+  # This resource creates floating IP and maps to primary VM interface (which is 1st created neutron port)
+#  vDPI_floating_ip:
+#    type: OS::Neutron::FloatingIP
+#    properties:
+#      floating_network_id:
+#        get_param: public_network
+#      floating_ip_address: "172.168.2.170"
+#      port_id:
+#        get_resource: vnf_vDPI_port_in
+#
+#  vFW_floating_ip:
+#    type: OS::Neutron::FloatingIP
+#    properties:
+#      floating_network_id:
+#        get_param: public_network
+#      floating_ip_address: "172.168.2.172"
+#      port_id:
+#        get_resource: vnf_vFW_port_in
+
+
+#  vnf_vDPI_port_out:
+#    type: OS::Neutron::Port
+#    properties:
+#      network_id:
+#        get_param: private_network
+#      fixed_ips:
+#        - subnet_id:
+#            get_param: private_subnet
+
+  # for fixed IPs
+  vnf_vDPI_port_out:
+      type: OS::Neutron::Port
+      properties:
+        network_id:
+          get_param: private_network_2
+        fixed_ips: [{ "subnet": {get_param: private_subnet_2}, "ip_address": 10.0.11.20}]
+
+  vnf_vFW_mgmt:
+    type: OS::Neutron::Port
+    properties:
+      network_id:
+        get_param: public_network
+      fixed_ips:
+        - subnet_id:
+            get_param: public_subnet
+#
+#  vnf_vFW_port_out:
+#    type: OS::Neutron::Port
+#    properties:
+#      network_id:
+#        get_param: private_network
+#      fixed_ips:
+#        - subnet_id:
+#            get_param: private_subnet
+
+## for fixed IPs
+#  vnf_vFW_port_in:
+#      type: OS::Neutron::Port
+#      properties:
+#        network_id:
+#          get_param: private_network
+#        fixed_ips: [{ "subnet": {get_param: private_subnet}, "ip_address": 192.168.10.30}]
+
+  # for fixed IPs
+  vnf_vFW_port_in:
+      type: OS::Neutron::Port
+      properties:
+        network_id:
+          get_param: private_network_1
+        fixed_ips: [{ "subnet": {get_param: private_subnet_1}, "ip_address": 10.0.10.30}]
+
+  # for fixed IPs
+  vnf_vFW_port_out:
+      type: OS::Neutron::Port
+      properties:
+        network_id:
+          get_param: private_network_2
+        fixed_ips: [{ "subnet": {get_param: private_subnet_2}, "ip_address": 10.0.11.30}]
+
+  vnf_vDPI:
+    type: OS::Nova::Server
+    properties:
+      name: vDPI
+      key_name: { get_param: sshkey }
+      availability_zone: nova:silpixa00397245
+      image:
+        get_param: image_vDPI
+      flavor:
+        get_param: flavor
+      networks:
+        - port:
+            get_resource: vnf_vDPI_mgmt
+        - port:
+            get_resource: vnf_vDPI_port_in
+        - port:
+            get_resource: vnf_vDPI_port_out
+      user_data_format: SOFTWARE_CONFIG
+      user_data: { get_resource: boot_config_DPI}
+#      user_data:
+#        str_replace:
+#          template: |
+#            #!/bin/bash
+#            echo "Running boot script to enable ingress port in promisc mode"
+#            ifname=$(ifconfig | grep -B1 "inet addr:"$ipaddr | awk '$1!="inet" && $1!="--" {print $1}')
+#            ip link set $ifname promisc on
+#            ifconfig
+#          params:
+#            $ipaddr: {get_attr: [vnf_vDPI_port_in, fixed_ips, 0, ip_address]}
+
+
+  vnf_vFW:
+    type: OS::Nova::Server
+#    depends_on: [vnf_vDPI, vnf_vFW_port_in, vnf_vFW_port_out]
+    properties:
+      name: vFW
+      key_name: { get_param: sshkey }
+      availability_zone: nova:silpixa00397389
+      image:
+        get_param: image_vFW
+      flavor:
+        get_param: flavor
+      networks:
+        - port:
+            get_resource: vnf_vFW_mgmt
+        - port:
+            get_resource: vnf_vFW_port_in
+        - port:
+            get_resource: vnf_vFW_port_out
+      user_data_format: SOFTWARE_CONFIG
+      user_data: { get_resource: boot_config_FW}
+#      user_data:
+#        str_replace:
+#          template: |
+#            #!/bin/bash
+#            echo "Running boot script to enable ingress port in promisc mode"
+#            ifname=$(ifconfig | grep -B1 "inet addr:"$ipfw | awk '$1!="inet" && $1!="--" {print $1}')
+#            ip link set $ifname promisc on
+#            ifconfig
+#          params:
+#            $ipfw: {get_attr: [vnf_vFW_port_in, fixed_ips, 0, ip_address]}
+
+  chain1_create:
+    type: VW::Service::Function
+    depends_on: [vnf_vDPI, vnf_vFW, vnf_vDPI_port_in, vnf_vFW_port_in]
+    properties:
+      ports_ids: [get_resource: vnf_vDPI_port_in, get_resource: vnf_vDPI_port_out, get_resource: vnf_vFW_port_in, get_resource: vnf_vFW_port_out]
+      ports_ips: [get_attr: [ vnf_vDPI_port_in, fixed_ips, 0, ip_address], get_attr: [vnf_vFW_port_in, fixed_ips, 0, ip_address]]
+      odl_username : { get_param: odl_username }
+      odl_password: { get_param: odl_password }
+      odl_ip_port: { get_param: odl_ip_port }
+
+outputs:
+  vnf_vDPI_port:
+    description: Chain1 - SFC port1
+    value:
+      get_attr: [ vnf_vDPI_port_in, fixed_ips, 0, ip_address]
+
+  vnf_vFW_port:
+    description: Chain1 - SFC port2
+    value:
+      get_attr: [ vnf_vFW_port_in, fixed_ips, 0, ip_address]
